@@ -15,8 +15,8 @@ public class UnitInfo : MonoBehaviour
     {
         get { return weaponRange; }
     }
-    [SerializeField] private float damagePerAttack;
-    public float DamagePerAttack
+    [SerializeField] private Vector2 damagePerAttack;
+    public Vector2 DamagePerAttack
     {
         get { return damagePerAttack; }
     }

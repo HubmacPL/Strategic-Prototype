@@ -39,6 +39,7 @@ public class CameraController : MonoBehaviour
         Vector3 forceVector = new Vector3(0, 0, 0);
 
         //Margin move
+        /*
         if (mousePosition.x >= screenSize.x - screenMargin)
         {
             forceVector.x = 1;
@@ -70,7 +71,7 @@ public class CameraController : MonoBehaviour
             forceVector.z = 0;
             cursorInMargin = false;
         }
-
+        */
         //ScroolRool move
         if (!cursorInMargin)
         {

@@ -2,6 +2,17 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum OrderTypes
+{
+    MoveToPoint,
+    AttackOponnent,
+}
+struct Order
+{
+    public OrderTypes orderType;
+    public GameObject opponentTarger;
+    public Vector3 pointTarget;
+}
 public enum UnitTypes
 {
     Infantry,
@@ -9,8 +20,10 @@ public enum UnitTypes
 }
 public enum UnitState
 {
-    Looking,
+    MoveState,
     Attack,
+    Wait,
+    Order,
 }
 
 public class UnitController : MonoBehaviour
@@ -24,34 +37,47 @@ public class UnitController : MonoBehaviour
         set { this.unitStats = value; }
     }
 
-    private UnitsManager unitsManagerInstance;
     [SerializeField] private bool controlledByUI = true;
+    public bool ControlledByUI
+    {
+        get { return controlledByUI; }
+        set { this.controlledByUI = value; }
+    }
     [SerializeField] private UnitState currentState;
+
+    [SerializeField] private Queue<Order> ordersQueue = new Queue<Order>();
 
     [SerializeField] private GameObject enemyTarget;
     [SerializeField] private List<GameObject> opponents;
+    [SerializeField] private float moveTargetMarginDistance = 5.0f;
+
+
+    [Header("Debug Settings")]
+    [SerializeField] private bool freezeMode = false;
+    [SerializeField] private bool noDamageMode = false;
+
 
     private void Start()
     {
         unitInfo = gameObject.GetComponent<UnitInfo>();
         unitStats = new UnitStats(unitInfo.HealthPoint);
-        unitsManagerInstance = GameObject.FindGameObjectWithTag("GameController").GetComponent<UnitsManager>();
         unitRigidbody = gameObject.GetComponent<Rigidbody>();
 
-        if(controlledByUI)eefe
+        if(controlledByUI)
         {
-            opponents = unitsManagerInstance.playerTeam;
+            opponents = UnitsManager.Instance.playerTeam;
         }
         else
         {
-            opponents = unitsManagerInstance.uiTeam;
+            opponents = UnitsManager.Instance.uiTeam;
         }
 
-        currentState = UnitState.Looking;
+        currentState = UnitState.Wait;
     }
 
     private void Update()
     {
+        //Make unit states
         MakeState(currentState);
     }
 
@@ -61,14 +87,17 @@ public class UnitController : MonoBehaviour
 
     private void MakeState(UnitState state)
     {
-        switch(state)
+        switch (state)
         {
             case UnitState.Attack:
                 AttackState();
-                    break;
-            case UnitState.Looking:
-                LookingState();
-                    break;
+                break;
+            case UnitState.MoveState:
+                MoveState();
+                break;
+            case UnitState.Wait:
+                WaitState();
+                break;
         }
     }
     private bool attackPossible = true;
@@ -90,19 +119,122 @@ public class UnitController : MonoBehaviour
     }
     private void MakeAttack()
     {
-        enemyTarget.GetComponent<UnitController>().Damage(unitInfo.DamagePerAttack);
-        Debug.Log("BOOM KURWO");
-    }
-    private void AttackState()
-    {
-        float distance = Vector3.Distance(enemyTarget.transform.position, transform.position);
-        if (distance > unitInfo.WeaponRange)
+        bool mishit = false;
+        float mishitCalculate;
+        mishitCalculate = Random.Range(0, 100);
+
+        if(mishitCalculate < unitInfo.Accuracy)
         {
-            currentState = UnitState.Looking;
+            mishit = true;
         }
         else
         {
-            AttackActivator(unitInfo.TimeBetweenAttack);
+            mishit = false;
+        }
+
+        if(mishit == true)
+        {
+            Debug.Log(gameObject.name + " Zpudłował");
+            return;
+        }
+
+        float damage = Random.Range(unitInfo.DamagePerAttack.x, unitInfo.DamagePerAttack.y);
+        enemyTarget.GetComponent<UnitController>().Damage(damage);
+        Debug.Log("OBERWAŁ: "+enemyTarget.name+" Za: "+damage+" I jego hp wynosi: "+enemyTarget.GetComponent<UnitController>().UnitStats.HealthPoint);
+    }
+    private void AttackState()
+    {
+        if(enemyTarget != null)
+        {
+            float distance = Vector3.Distance(enemyTarget.transform.position, transform.position);
+            if (distance > unitInfo.WeaponRange)
+            {
+                currentState = UnitState.Wait;
+            }
+            else
+            {
+                moveVector = enemyTarget.transform.position - transform.position;
+                Quaternion rotation = Quaternion.LookRotation(moveVector, Vector3.up);
+                gameObject.transform.rotation = rotation;
+                AttackActivator(unitInfo.TimeBetweenAttack);
+            }
+        }
+        else
+        {
+            currentState = UnitState.Wait;
+        }
+    }
+    private void WaitState()
+    {
+        if(ordersQueue.Count != 0)
+        {
+            switch(ordersQueue.Peek().orderType)
+            {
+                case OrderTypes.AttackOponnent:
+                    enemyTarget = ordersQueue.Peek().opponentTarger;
+                    currentState = UnitState.MoveState;
+                    break;
+                case OrderTypes.MoveToPoint:
+                    currentState = UnitState.MoveState;
+                    moveTarget = ordersQueue.Peek().pointTarget;
+                    break;
+            }
+        }
+        else
+        {
+            if(opponents.Count > 0)
+            {
+                foreach (GameObject gm in opponents)
+                {
+                    if (Vector3.Distance(gm.transform.position, gameObject.transform.position) < unitInfo.WeaponRange)
+                    {
+                        enemyTarget = gm;
+                        currentState = UnitState.Attack;
+                    }
+                }
+            }
+        }
+    }
+    private void MoveState()
+    {
+        if(enemyTarget != null)
+        {
+            Vector3 moveTrg;
+            moveTrg = enemyTarget.transform.position;
+            moveVector = moveTrg - transform.position;
+            Quaternion rotation = Quaternion.LookRotation(moveVector, Vector3.up);
+            transform.rotation = rotation;
+
+            if(Vector3.Distance(moveTrg, transform.position) > unitInfo.WeaponRange)
+            {
+                Movement();
+            }
+            else
+            {
+                ordersQueue.Dequeue();
+                currentState = UnitState.Attack;
+            }
+        }
+        else if(moveTarget != null)
+        {
+            moveVector = moveTarget - transform.position;
+            Quaternion rotation = Quaternion.LookRotation(moveVector, Vector3.up);
+            transform.rotation = rotation;
+
+            if(Vector3.Distance(moveTarget, transform.position) > moveTargetMarginDistance)
+            {
+                Movement();
+            }
+            else
+            {
+                ordersQueue.Dequeue();
+                currentState = UnitState.Wait;
+            }
+        }
+        else
+        {
+            ordersQueue.Dequeue();
+            currentState = UnitState.Wait;
         }
     }
     private void LookingState()
@@ -182,6 +314,8 @@ public class UnitController : MonoBehaviour
     {
         if(strikeForce > unitStats.HealthPoint)
         {
+            Debug.Log("Unit dead");
+            UnitStats.HealthPoint = UnitStats.HealthPoint - strikeForce;
             UnitDead();
         }
         else
@@ -193,6 +327,33 @@ public class UnitController : MonoBehaviour
     private void UnitDead()
     {
         Destroy(gameObject);
+    }
+
+    public void GiveOrder(GameObject gm)
+    {
+        ordersQueue.Clear();
+        enemyTarget = null;
+
+        Order order = new Order();
+        order.orderType = OrderTypes.AttackOponnent;
+        order.opponentTarger = gm;
+
+        ordersQueue.Enqueue(order);
+
+        currentState = UnitState.Wait;
+    }
+    public void GiveOrder(Vector3 pos)
+    {
+        ordersQueue.Clear();
+        enemyTarget = null;
+
+        Order order = new Order();
+        order.orderType = OrderTypes.MoveToPoint;
+        order.pointTarget = pos;
+
+        ordersQueue.Enqueue(order);
+
+        currentState = UnitState.Wait;
     }
 
 }
